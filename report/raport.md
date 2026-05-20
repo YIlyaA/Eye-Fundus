@@ -53,11 +53,13 @@ Wspólny kod wydzielony do modułów `src/*.py`.
 #### Kroki przetwarzania
 
 1. **Wstępne przetwarzanie** (`src/preprocessing.py`)
+
    - Wyodrębnienie kanału zielonego — naczynia mają na nim największy kontrast.
    - Wypełnienie pikseli poza FOV medianą wewnątrz FOV — usuwa ostrą krawędź ramki, żeby Frangi nie traktował jej jako naczynia.
    - CLAHE (`cv2.createCLAHE`, `clipLimit=2.0`, `tileGridSize=(8, 8)`) — lokalne wyrównanie kontrastu z ograniczeniem wzmocnienia szumu.
 
 2. **Właściwe przetwarzanie** (`src/baseline.py`)
+
    - Filtr Frangiego (`skimage.filters.frangi`, `sigmas=(1,2,3,4,5)`, `black_ridges=True`) — detektor struktur tubularnych; na kanale zielonym naczynia są ciemniejsze od tła.
    - Opcjonalny downsampling przed filtrem (`scale=0.5`) — przyspiesza ~4×.
    - Normalizacja odpowiedzi do [0, 1].
@@ -101,15 +103,15 @@ Wektor cech (24 wartości, `src/features._features_from_batches`):
   - `max_depth = None` (bez ograniczenia)
   - `min_samples_leaf = 2`
   - `random_state = 42`
-- Pipeline `imblearn.Pipeline` (`undersample → rf`) — resampling stosowany **tylko podczas fit**.
+- Pipeline `imblearn.Pipeline` (`undersample -> rf`) — resampling stosowany **tylko podczas fit**.
 
 #### Wyniki hold-out (z notebooka `02_classical_ml.ipynb`)
 
 > _Wpisać liczby z komórki „Validation" notebooka (sekcja 5):_
 
-| accuracy | sensitivity | specificity | g_mean |
-|---|---|---|---|
-| _0.____ | _0.____ | _0.____ | _0.____ |
+| accuracy     | sensitivity  | specificity  | g_mean       |
+| ------------ | ------------ | ------------ | ------------ |
+| \_0.\_\_\_\_ | \_0.\_\_\_\_ | \_0.\_\_\_\_ | \_0.\_\_\_\_ |
 
 #### Uzasadnienie
 
@@ -145,9 +147,9 @@ Random Forest został wybrany jako odporny na nieliniowe zależności i nieskore
 
 > _Wpisać końcowe wartości train/val loss i val G-mean z ostatniej epoki:_
 
-| epoka | train_loss | val_loss | val_gmean |
-|---|---|---|---|
-| _ostatnia_ | _0.____ | _0.____ | _0.____ |
+| epoka      | train_loss   | val_loss     | val_gmean    |
+| ---------- | ------------ | ------------ | ------------ |
+| _ostatnia_ | \_0.\_\_\_\_ | \_0.\_\_\_\_ | \_0.\_\_\_\_ |
 
 #### Uzasadnienie
 
@@ -193,22 +195,22 @@ Wszystkie 6 obrazów testowych nie były używane do uczenia w etapie 2 ani w et
 
 > _Tabelę przeklejać z `app.ipynb`, sekcja 3.1._
 
-| metoda | accuracy | sensitivity | specificity | precision | g_mean | balanced_acc |
-|---|---|---|---|---|---|---|
-| baseline (Frangi) | _0.____±0.___ | _0.____±0.___ | _0.____±0.___ | _0.____±0.___ | _0.____±0.___ | _0.____±0.___ |
-| random_forest | _0.____±0.___ | _0.____±0.___ | _0.____±0.___ | _0.____±0.___ | _0.____±0.___ | _0.____±0.___ |
-| unet | _0.____±0.___ | _0.____±0.___ | _0.____±0.___ | _0.____±0.___ | _0.____±0.___ | _0.____±0.___ |
+| metoda            | accuracy        | sensitivity     | specificity     | precision       | g_mean          | balanced_acc    |
+| ----------------- | --------------- | --------------- | --------------- | --------------- | --------------- | --------------- |
+| baseline (Frangi) | \_0.\_**_±0._** | \_0.\_**_±0._** | \_0.\_**_±0._** | \_0.\_**_±0._** | \_0.\_**_±0._** | \_0.\_**_±0._** |
+| random_forest     | \_0.\_**_±0._** | \_0.\_**_±0._** | \_0.\_**_±0._** | \_0.\_**_±0._** | \_0.\_**_±0._** | \_0.\_**_±0._** |
+| unet              | \_0.\_**_±0._** | \_0.\_**_±0._** | \_0.\_**_±0._** | \_0.\_**_±0._** | \_0.\_**_±0._** | \_0.\_**_±0._** |
 
 ### 5.2. Wyniki per-image × per-method
 
 > _Tabelę przeklejać z `app.ipynb`, sekcja 3.2._
 
-| obraz | metoda | accuracy | sensitivity | specificity | g_mean |
-|---|---|---|---|---|---|
-| 14_h | baseline | _0.____ | _0.____ | _0.____ | _0.____ |
-| 14_h | random_forest | _0.____ | _0.____ | _0.____ | _0.____ |
-| 14_h | unet | _0.____ | _0.____ | _0.____ | _0.____ |
-| ... | ... | ... | ... | ... | ... |
+| obraz | metoda        | accuracy     | sensitivity  | specificity  | g_mean       |
+| ----- | ------------- | ------------ | ------------ | ------------ | ------------ |
+| 14_h  | baseline      | \_0.\_\_\_\_ | \_0.\_\_\_\_ | \_0.\_\_\_\_ | \_0.\_\_\_\_ |
+| 14_h  | random_forest | \_0.\_\_\_\_ | \_0.\_\_\_\_ | \_0.\_\_\_\_ | \_0.\_\_\_\_ |
+| 14_h  | unet          | \_0.\_\_\_\_ | \_0.\_\_\_\_ | \_0.\_\_\_\_ | \_0.\_\_\_\_ |
+| ...   | ...           | ...          | ...          | ...          | ...          |
 
 ### 5.3. Analiza indywidualna obrazów
 

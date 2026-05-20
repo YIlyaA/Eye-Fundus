@@ -1,4 +1,5 @@
 """Wstępne przetwarzanie: kanał zielony, wypełnienie poza FOV, CLAHE."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -52,7 +53,7 @@ def preprocess(
     clip_limit: float = 2.0,
     tile_grid_size: tuple[int, int] = (8, 8),
 ) -> np.ndarray:
-    """green → fill_outside_fov → CLAHE."""
+    """green -> fill_outside_fov -> CLAHE."""
     g = to_green_channel(rgb)
     g = fill_outside_fov(g, fov)
     return apply_clahe(g, clip_limit=clip_limit, tile_grid_size=tile_grid_size)

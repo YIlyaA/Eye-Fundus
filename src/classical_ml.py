@@ -1,4 +1,5 @@
 """Random Forest na patchach 5×5 (etap 2, ocena 4)."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -22,20 +23,28 @@ def make_pipeline(
     n_jobs: int = -1,
     sampling_strategy: str | float = "auto",
 ) -> ImbPipeline:
-    """RandomUnderSampler → RandomForestClassifier. Pipeline z imblearn, nie sklearn."""
-    return ImbPipeline(steps=[
-        ("undersample", RandomUnderSampler(
-            sampling_strategy=sampling_strategy,
-            random_state=random_state,
-        )),
-        ("rf", RandomForestClassifier(
-            n_estimators=n_estimators,
-            max_depth=max_depth,
-            min_samples_leaf=min_samples_leaf,
-            random_state=random_state,
-            n_jobs=n_jobs,
-        )),
-    ])
+    """RandomUnderSampler -> RandomForestClassifier. Pipeline z imblearn, nie sklearn."""
+    return ImbPipeline(
+        steps=[
+            (
+                "undersample",
+                RandomUnderSampler(
+                    sampling_strategy=sampling_strategy,
+                    random_state=random_state,
+                ),
+            ),
+            (
+                "rf",
+                RandomForestClassifier(
+                    n_estimators=n_estimators,
+                    max_depth=max_depth,
+                    min_samples_leaf=min_samples_leaf,
+                    random_state=random_state,
+                    n_jobs=n_jobs,
+                ),
+            ),
+        ]
+    )
 
 
 def predict_mask(
@@ -51,7 +60,11 @@ def predict_mask(
     h, w = fov.shape
 
     X, coords = extract_features_grid(
-        rgb, fov, patch_size=patch_size, stride=stride, batch_size=batch_size,
+        rgb,
+        fov,
+        patch_size=patch_size,
+        stride=stride,
+        batch_size=batch_size,
     )
 
     n = X.shape[0]

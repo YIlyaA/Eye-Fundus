@@ -3,7 +3,8 @@
 Binarna segmentacja naczyń krwionośnych na obrazach dna siatkówki oka.
 
 Realizacja etapowa — trzy poziomy trudności odpowiadające ocenom 3, 4 i 5:
-1. **Etap 1** — klasyczne przetwarzanie obrazu: kanał zielony → CLAHE → filtr Frangiego → morfologia.
+
+1. **Etap 1** — klasyczne przetwarzanie obrazu: kanał zielony -> CLAHE -> filtr Frangiego -> morfologia.
 2. **Etap 2** — klasyczny ML: patche 5×5 + cechy (momenty Hu, statystyki) + Random Forest.
 3. **Etap 3** — deep learning: U-Net na PyTorch.
 4. **Etap 4** — interaktywna aplikacja (`app.ipynb`) + porównanie trzech metod.
@@ -24,7 +25,7 @@ pip install -r requirements.txt
 
 Używana jest baza **HRF Image Database**: https://www5.cs.fau.de/research/data/fundus-images/
 
-1. Na stronie bazy znaleźć sekcję *Segmentation Dataset* i pobrać archiwum **`all.zip`** (~73 MB). Zawiera wszystkie 45 obrazów wraz z maskami eksperckimi naczyń oraz maskami FOV.
+1. Na stronie bazy znaleźć sekcję _Segmentation Dataset_ i pobrać archiwum **`all.zip`** (~73 MB). Zawiera wszystkie 45 obrazów wraz z maskami eksperckimi naczyń oraz maskami FOV.
 2. Rozpakować do `data/HRF/` tak, aby uzyskać następującą strukturę:
 
 ```
@@ -41,6 +42,7 @@ Pliki nazwane są: `<NN>_<typ>`, gdzie typ = `h` (healthy), `dr` (diabetic retin
 Wszystkie notebooki uruchamiane są z korzenia repozytorium, żeby względne ścieżki `data/...`, `src/...`, `models/...` działały poprawnie.
 
 Następnie po kolei:
+
 1. `notebooks/01_baseline.ipynb` — etap 1
 2. `notebooks/02_classical_ml.ipynb` — etap 2 (zapisuje `models/rf.joblib`)
 3. `notebooks/03_deep_learning.ipynb` — etap 3 (zapisuje `models/unet.pt`)

@@ -5,6 +5,7 @@ import numpy as np
 import cv2
 from numpy.lib.stride_tricks import sliding_window_view
 from tqdm import tqdm
+from imblearn.under_sampling import RandomUnderSampler
 
 from .preprocessing import preprocess
 
@@ -167,38 +168,28 @@ def sample_points(
     patch_size: int = 5,
     rng: np.random.Generator | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Zbalansowany sampling (50/50 naczynie/tło) wewnątrz FOV."""
+    """Zbalansowany sampling (50/50 naczynie/tło) wewnątrz FOV przez RandomUnderSampler."""
     if rng is None:
         rng = np.random.default_rng()
     half = patch_size // 2
 
+    # Obcięcie FOV o margines pod patch 5×5 — specyfika projektu, biblioteka tego nie zrobi
     valid = fov > 0
     valid[:half, :] = False
     valid[-half:, :] = False
     valid[:, :half] = False
     valid[:, -half:] = False
 
-    vy, vx = np.where(valid & (manual > 0))
-    by, bx = np.where(valid & (manual == 0))
-    if len(vy) == 0 or len(by) == 0:
-        raise ValueError("Wewnątrz FOV brak naczyń lub tła.")
+    ys, xs = np.where(valid)
+    coords = np.column_stack([ys, xs])
+    labels = (manual[ys, xs] > 0).astype(np.uint8)
 
     n_per_class = n_samples // 2
-    n_v = min(n_per_class, len(vy))
-    n_b = min(n_per_class, len(by))
-    iv = rng.choice(len(vy), size=n_v, replace=False)
-    ib = rng.choice(len(by), size=n_b, replace=False)
-
-    points = np.vstack([
-        np.column_stack([vy[iv], vx[iv]]),
-        np.column_stack([by[ib], bx[ib]]),
-    ])
-    labels = np.concatenate([
-        np.ones(n_v, dtype=np.uint8),
-        np.zeros(n_b, dtype=np.uint8),
-    ])
-    perm = rng.permutation(len(labels))
-    return points[perm], labels[perm]
+    rus = RandomUnderSampler(
+        sampling_strategy={0: n_per_class, 1: n_per_class},
+        random_state=int(rng.integers(0, 2**31)),
+    )
+    return rus.fit_resample(coords, labels)
 
 
 def build_dataset(

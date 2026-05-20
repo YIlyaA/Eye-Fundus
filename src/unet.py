@@ -1,4 +1,4 @@
-"""U-Net (PyTorch) — etap 3, ocena 5. Trening na kropach 256×256, predykcja przez tiling."""
+"""U-Net (segmentation_models_pytorch) — etap 3, ocena 5."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -10,62 +10,28 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
+import segmentation_models_pytorch as smp
+import albumentations as A
+from torchmetrics.classification import BinaryRecall, BinarySpecificity
 
 
-class DoubleConv(nn.Module):
-    """2× (Conv3x3 + BN + ReLU)."""
-    def __init__(self, in_ch: int, out_ch: int):
-        super().__init__()
-        self.block = nn.Sequential(
-            nn.Conv2d(in_ch, out_ch, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(out_ch),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(out_ch, out_ch, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(out_ch),
-            nn.ReLU(inplace=True),
-        )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.block(x)
-
-
-class UNet(nn.Module):
-    """U-Net z 4 poziomami, base_channels=32 → ~4M parametrów."""
-    def __init__(self, in_channels: int = 3, out_channels: int = 1, base_channels: int = 32):
-        super().__init__()
-        c1, c2, c3, c4, c5 = (
-            base_channels, base_channels * 2, base_channels * 4,
-            base_channels * 8, base_channels * 16,
-        )
-        self.enc1 = DoubleConv(in_channels, c1)
-        self.enc2 = DoubleConv(c1, c2)
-        self.enc3 = DoubleConv(c2, c3)
-        self.enc4 = DoubleConv(c3, c4)
-        self.pool = nn.MaxPool2d(2)
-        self.bottleneck = DoubleConv(c4, c5)
-        self.up4 = nn.ConvTranspose2d(c5, c4, kernel_size=2, stride=2)
-        self.dec4 = DoubleConv(c5, c4)
-        self.up3 = nn.ConvTranspose2d(c4, c3, kernel_size=2, stride=2)
-        self.dec3 = DoubleConv(c4, c3)
-        self.up2 = nn.ConvTranspose2d(c3, c2, kernel_size=2, stride=2)
-        self.dec2 = DoubleConv(c3, c2)
-        self.up1 = nn.ConvTranspose2d(c2, c1, kernel_size=2, stride=2)
-        self.dec1 = DoubleConv(c2, c1)
-        self.final = nn.Conv2d(c1, out_channels, kernel_size=1)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        e1 = self.enc1(x)
-        e2 = self.enc2(self.pool(e1))
-        e3 = self.enc3(self.pool(e2))
-        e4 = self.enc4(self.pool(e3))
-        b = self.bottleneck(self.pool(e4))
-        d4 = self.dec4(torch.cat([self.up4(b), e4], dim=1))
-        d3 = self.dec3(torch.cat([self.up3(d4), e3], dim=1))
-        d2 = self.dec2(torch.cat([self.up2(d3), e2], dim=1))
-        d1 = self.dec1(torch.cat([self.up1(d2), e1], dim=1))
-        return self.final(d1)
+# ---- Model -----------------------------------------------------------------
+def UNet(
+    in_channels: int = 3,
+    out_channels: int = 1,
+    encoder: str = "resnet34",
+    encoder_weights: str | None = "imagenet",
+) -> nn.Module:
+    """U-Net z biblioteki segmentation_models_pytorch (encoder pretrained na ImageNet)."""
+    return smp.Unet(
+        encoder_name=encoder,
+        encoder_weights=encoder_weights,
+        in_channels=in_channels,
+        classes=out_channels,
+    )
 
 
+# ---- Dataset ---------------------------------------------------------------
 class RetinaPatchDataset(Dataset):
     """Losowe kropy 256×256 z augmentacją (rot90, flip), sampling z biasem na naczynia."""
     IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
@@ -88,6 +54,11 @@ class RetinaPatchDataset(Dataset):
         self.vessel_prob = vessel_prob
         self.rng = np.random.default_rng(seed)
         self._cache: dict[str, tuple] = {}
+        self.augment = A.Compose([
+            A.RandomRotate90(p=1.0),
+            A.HorizontalFlip(p=0.5),
+            A.VerticalFlip(p=0.5),
+        ], additional_targets={'fov': 'mask'}, seed=seed)
 
     def __len__(self) -> int:
         return len(self.image_ids) * self.crops_per_image
@@ -124,19 +95,8 @@ class RetinaPatchDataset(Dataset):
         manual_c = manual[y:y+cs, x:x+cs]
         fov_c = fov[y:y+cs, x:x+cs]
 
-        k_rot = int(self.rng.integers(0, 4))
-        if k_rot:
-            rgb_c = np.rot90(rgb_c, k_rot)
-            manual_c = np.rot90(manual_c, k_rot)
-            fov_c = np.rot90(fov_c, k_rot)
-        if self.rng.random() < 0.5:
-            rgb_c = np.fliplr(rgb_c).copy()
-            manual_c = np.fliplr(manual_c).copy()
-            fov_c = np.fliplr(fov_c).copy()
-        if self.rng.random() < 0.5:
-            rgb_c = np.flipud(rgb_c).copy()
-            manual_c = np.flipud(manual_c).copy()
-            fov_c = np.flipud(fov_c).copy()
+        out = self.augment(image=rgb_c, mask=manual_c, fov=fov_c)
+        rgb_c, manual_c, fov_c = out['image'], out['mask'], out['fov']
 
         x_tensor = (rgb_c.astype(np.float32) / 255.0 - self.IMAGENET_MEAN) / self.IMAGENET_STD
         x_tensor = torch.from_numpy(np.ascontiguousarray(x_tensor.transpose(2, 0, 1)))
@@ -145,36 +105,28 @@ class RetinaPatchDataset(Dataset):
         return x_tensor, y_tensor, fov_tensor
 
 
-def dice_loss(logits: torch.Tensor, target: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
-    """Soft Dice = 1 - 2|A∩B| / (|A|+|B|), liczone na sigmoidzie."""
-    probs = torch.sigmoid(logits)
-    p = probs.flatten(1)
-    t = target.flatten(1)
-    num = 2.0 * (p * t).sum(dim=1) + eps
-    den = p.sum(dim=1) + t.sum(dim=1) + eps
-    return 1.0 - (num / den).mean()
+# ---- Loss ------------------------------------------------------------------
+# DiceLoss z smp + BCE z PyTorch, oba maskowane przez FOV
+_smp_dice = smp.losses.DiceLoss(mode="binary", from_logits=True)
 
 
 def combined_loss(logits: torch.Tensor, target: torch.Tensor, fov: torch.Tensor) -> torch.Tensor:
-    """BCE + Dice, oba maskowane przez FOV."""
+    """BCE + Dice (z smp), oba maskowane przez FOV."""
     bce_per_pixel = F.binary_cross_entropy_with_logits(logits, target, reduction="none")
     bce = (bce_per_pixel * fov).sum() / fov.sum().clamp(min=1.0)
-    d = dice_loss(logits * fov, target * fov)
-    return bce + d
+    dice = _smp_dice(logits * fov, (target * fov).long())
+    return bce + dice
 
 
 @torch.no_grad()
 def gmean_torch(probs: torch.Tensor, target: torch.Tensor, fov: torch.Tensor, thr: float = 0.5) -> float:
-    """G-mean = sqrt(sens·spec) w FOV."""
-    pred = (probs > thr) & (fov > 0)
-    gt = (target > 0) & (fov > 0)
-    f = fov > 0
-    tp = (pred & gt).sum().item()
-    fn = (~pred & gt & f).sum().item()
-    tn = (~pred & ~gt & f).sum().item()
-    fp = (pred & ~gt & f).sum().item()
-    sens = tp / (tp + fn) if (tp + fn) else 0.0
-    spec = tn / (tn + fp) if (tn + fp) else 0.0
+    """G-mean = sqrt(sens·spec) w FOV — z torchmetrics."""
+    # Maskowanie przez FOV: zostawiamy tylko piksele wewnątrz pola widzenia
+    mask = (fov > 0).flatten()
+    pred = (probs > thr).long().flatten()[mask]
+    gt = (target > 0).long().flatten()[mask]
+    sens = BinaryRecall().to(probs.device)(pred, gt).item()
+    spec = BinarySpecificity().to(probs.device)(pred, gt).item()
     return math.sqrt(max(0.0, sens * spec))
 
 
@@ -187,6 +139,7 @@ def get_device() -> torch.device:
     return torch.device("cpu")
 
 
+# ---- Trening ---------------------------------------------------------------
 @dataclass
 class TrainHistory:
     train_loss: list[float]
@@ -195,7 +148,7 @@ class TrainHistory:
 
 
 def train(
-    model: UNet,
+    model: nn.Module,
     train_loader: DataLoader,
     val_loader: DataLoader,
     epochs: int = 30,
@@ -267,9 +220,10 @@ def train(
     return history
 
 
+# ---- Predykcja na pełnym obrazie -------------------------------------------
 @torch.no_grad()
 def predict_mask(
-    model: UNet,
+    model: nn.Module,
     rgb: np.ndarray,
     fov: np.ndarray,
     device: torch.device | None = None,
@@ -320,7 +274,8 @@ def predict_mask(
     return (avg > threshold).astype(np.uint8) & (fov > 0).astype(np.uint8)
 
 
-def save_model(model: UNet, path: Path | str) -> None:
+# ---- Zapis / wczytanie -----------------------------------------------------
+def save_model(model: nn.Module, path: Path | str) -> None:
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     torch.save(model.state_dict(), path)
 
@@ -329,13 +284,14 @@ def load_model(
     path: Path | str,
     in_channels: int = 3,
     out_channels: int = 1,
-    base_channels: int = 32,
+    encoder: str = "resnet34",
     device: torch.device | None = None,
-) -> UNet:
-    """Tworzy UNet, wczytuje wagi, .to(device) + eval()."""
+) -> nn.Module:
+    """Tworzy U-Net, wczytuje wagi, .to(device) + eval()."""
     if device is None:
         device = get_device()
-    model = UNet(in_channels=in_channels, out_channels=out_channels, base_channels=base_channels)
+    model = UNet(in_channels=in_channels, out_channels=out_channels,
+                 encoder=encoder, encoder_weights=None)
     state = torch.load(path, map_location="cpu")
     model.load_state_dict(state)
     model.to(device)
