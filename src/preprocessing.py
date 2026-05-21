@@ -18,7 +18,7 @@ def apply_clahe(
     clip_limit: float = 2.0,
     tile_grid_size: tuple[int, int] = (8, 8),
 ) -> np.ndarray:
-    """CLAHE — lokalne wyrównanie histogramu z ograniczeniem wzmocnienia."""
+    """CLAHE - lokalne wyrównanie histogramu z ograniczeniem wzmocnienia."""
     if gray.dtype != np.uint8:
         gray = gray.astype(np.uint8)
     clahe = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=tile_grid_size)
@@ -38,7 +38,7 @@ def fill_outside_fov(
     fov: np.ndarray,
     fill_value: int | None = None,
 ) -> np.ndarray:
-    """Zastępuje piksele poza FOV medianą wewnątrz — usuwa krawędź ramki."""
+    """Zastępuje piksele poza FOV medianą wewnątrz - usuwa krawędź ramki."""
     out = gray.copy()
     inside = fov > 0
     if fill_value is None:

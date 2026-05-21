@@ -1,4 +1,4 @@
-"""Wczytywanie obrazów HRF — RGB + maska eksperta + maska FOV."""
+"""Wczytywanie obrazów HRF - RGB + maska eksperta + maska FOV."""
 from __future__ import annotations
 
 from pathlib import Path

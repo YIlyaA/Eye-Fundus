@@ -1,4 +1,4 @@
-"""U-Net (segmentation_models_pytorch) — etap 3, ocena 5."""
+"""U-Net (segmentation_models_pytorch) - etap 3, ocena 5."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -12,7 +12,11 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 import segmentation_models_pytorch as smp
 import albumentations as A
+from albumentations.pytorch import ToTensorV2
+import pytorch_lightning as pl
+from pytorch_lightning.callbacks import Callback
 from torchmetrics.classification import BinaryRecall, BinarySpecificity
+from monai.inferers import sliding_window_inference
 
 
 # ---- Model -----------------------------------------------------------------
@@ -34,6 +38,7 @@ def UNet(
 # ---- Dataset ---------------------------------------------------------------
 class RetinaPatchDataset(Dataset):
     """Losowe kropy 256×256 z augmentacją (rot90, flip), sampling z biasem na naczynia."""
+    # Stałe ImageNet - wymagane przez encoder pretrained na ImageNet.
     IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
     IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
@@ -54,74 +59,66 @@ class RetinaPatchDataset(Dataset):
         self.vessel_prob = vessel_prob
         self.rng = np.random.default_rng(seed)
         self._cache: dict[str, tuple] = {}
-        self.augment = A.Compose([
+        # Pełny pipeline: aug -> normalize -> HWC->CHW tensor. Wszystko z albumentations.
+        self.transform = A.Compose([
             A.RandomRotate90(p=1.0),
             A.HorizontalFlip(p=0.5),
             A.VerticalFlip(p=0.5),
+            A.Normalize(mean=self.IMAGENET_MEAN.tolist(),
+                        std=self.IMAGENET_STD.tolist(),
+                        max_pixel_value=255.0),
+            ToTensorV2(),
         ], additional_targets={'fov': 'mask'}, seed=seed)
 
     def __len__(self) -> int:
         return len(self.image_ids) * self.crops_per_image
 
     def _load(self, image_id: str):
-        # Cache + prekomputacja dozwolonych środków (inaczej np.where co getitem).
+        # Cache + prekomputacja dozwolonych środków kropu (inaczej np.where co getitem).
         if image_id not in self._cache:
             rgb, manual, fov = self.loader(image_id)
             half = self.crop_size // 2
             valid = fov > 0
-            valid[:half, :] = False
-            valid[-half:, :] = False
-            valid[:, :half] = False
-            valid[:, -half:] = False
+            valid[:half, :] = valid[-half:, :] = False
+            valid[:, :half] = valid[:, -half:] = False
             vy, vx = np.where(valid & (manual > 0))
             ay, ax = np.where(valid)
             self._cache[image_id] = (rgb, manual, fov, vy, vx, ay, ax)
         return self._cache[image_id]
 
     def __getitem__(self, idx: int):
-        image_id = self.image_ids[idx % len(self.image_ids)]
-        rgb, manual, fov, vy, vx, ay, ax = self._load(image_id)
+        rgb, manual, fov, vy, vx, ay, ax = self._load(self.image_ids[idx % len(self.image_ids)])
         half = self.crop_size // 2
-
-        if self.rng.random() < self.vessel_prob and len(vy) > 0:
-            k = int(self.rng.integers(0, len(vy)))
-            cy, cx = vy[k], vx[k]
-        else:
-            k = int(self.rng.integers(0, len(ay)))
-            cy, cx = ay[k], ax[k]
-        y, x = cy - half, cx - half
+        use_vessel = self.rng.random() < self.vessel_prob and len(vy) > 0
+        ys, xs = (vy, vx) if use_vessel else (ay, ax)
+        k = int(self.rng.integers(0, len(ys)))
+        y, x = ys[k] - half, xs[k] - half
         cs = self.crop_size
-        rgb_c = rgb[y:y+cs, x:x+cs]
-        manual_c = manual[y:y+cs, x:x+cs]
-        fov_c = fov[y:y+cs, x:x+cs]
-
-        out = self.augment(image=rgb_c, mask=manual_c, fov=fov_c)
-        rgb_c, manual_c, fov_c = out['image'], out['mask'], out['fov']
-
-        x_tensor = (rgb_c.astype(np.float32) / 255.0 - self.IMAGENET_MEAN) / self.IMAGENET_STD
-        x_tensor = torch.from_numpy(np.ascontiguousarray(x_tensor.transpose(2, 0, 1)))
-        y_tensor = torch.from_numpy(np.ascontiguousarray(manual_c)).float().unsqueeze(0)
-        fov_tensor = torch.from_numpy(np.ascontiguousarray(fov_c)).float().unsqueeze(0)
-        return x_tensor, y_tensor, fov_tensor
+        out = self.transform(
+            image=rgb[y:y+cs, x:x+cs],
+            mask=manual[y:y+cs, x:x+cs],
+            fov=fov[y:y+cs, x:x+cs],
+        )
+        return out['image'], out['mask'].float().unsqueeze(0), out['fov'].float().unsqueeze(0)
 
 
 # ---- Loss ------------------------------------------------------------------
-# DiceLoss z smp + BCE z PyTorch, oba maskowane przez FOV
 _smp_dice = smp.losses.DiceLoss(mode="binary", from_logits=True)
 
 
 def combined_loss(logits: torch.Tensor, target: torch.Tensor, fov: torch.Tensor) -> torch.Tensor:
     """BCE + Dice (z smp), oba maskowane przez FOV."""
-    bce_per_pixel = F.binary_cross_entropy_with_logits(logits, target, reduction="none")
-    bce = (bce_per_pixel * fov).sum() / fov.sum().clamp(min=1.0)
+    # weight=fov daje per-pixel maskowanie BCE bez ręcznej redukcji.
+    bce = F.binary_cross_entropy_with_logits(
+        logits, target, weight=fov, reduction="sum"
+    ) / fov.sum().clamp(min=1.0)
     dice = _smp_dice(logits * fov, (target * fov).long())
     return bce + dice
 
 
 @torch.no_grad()
 def gmean_torch(probs: torch.Tensor, target: torch.Tensor, fov: torch.Tensor, thr: float = 0.5) -> float:
-    """G-mean = sqrt(sens·spec) w FOV — z torchmetrics."""
-    # Maskowanie przez FOV: zostawiamy tylko piksele wewnątrz pola widzenia
+    """G-mean = sqrt(sens·spec) w FOV - z torchmetrics."""
     mask = (fov > 0).flatten()
     pred = (probs > thr).long().flatten()[mask]
     gt = (target > 0).long().flatten()[mask]
@@ -139,12 +136,67 @@ def get_device() -> torch.device:
     return torch.device("cpu")
 
 
-# ---- Trening ---------------------------------------------------------------
+# ---- Trening (PyTorch Lightning) -------------------------------------------
 @dataclass
 class TrainHistory:
     train_loss: list[float]
     val_loss: list[float]
     val_gmean: list[float]
+
+
+class _LitUNet(pl.LightningModule):
+    """Cienka obwoluta Lightning: cała logika treningu/walidacji w step-ach."""
+    def __init__(self, model: nn.Module, lr: float = 1e-3):
+        super().__init__()
+        self.model = model
+        self.lr = lr
+
+    def forward(self, x):
+        return self.model(x)
+
+    def training_step(self, batch, _):
+        x, y, fov = batch
+        loss = combined_loss(self(x), y, fov)
+        self.log("train_loss", loss, on_epoch=True, on_step=False, prog_bar=True)
+        return loss
+
+    def validation_step(self, batch, _):
+        x, y, fov = batch
+        logits = self(x)
+        loss = combined_loss(logits, y, fov)
+        gmean = gmean_torch(torch.sigmoid(logits), y, fov)
+        self.log("val_loss", loss, prog_bar=True)
+        self.log("val_gmean", gmean, prog_bar=True)
+
+    def configure_optimizers(self):
+        opt = torch.optim.Adam(self.parameters(), lr=self.lr)
+        sch = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, mode="min", factor=0.5, patience=3)
+        return {"optimizer": opt, "lr_scheduler": {"scheduler": sch, "monitor": "val_loss"}}
+
+
+class _HistoryAndBestCheckpoint(Callback):
+    """Zbiera per-epoch historię + zapisuje state_dict modelu (nie Lightning) po best G-mean."""
+    def __init__(self, save_best_to: Path | str | None = None):
+        super().__init__()
+        self.save_best_to = save_best_to
+        self.history = TrainHistory(train_loss=[], val_loss=[], val_gmean=[])
+        self.best_gmean = -1.0
+
+    def on_validation_epoch_end(self, trainer, lit: _LitUNet):
+        m = trainer.callback_metrics
+        if "train_loss" not in m:  # sanity-check val przed pierwszą epoką treningu
+            return
+        tl = float(m["train_loss"])
+        vl = float(m["val_loss"])
+        vg = float(m["val_gmean"])
+        self.history.train_loss.append(tl)
+        self.history.val_loss.append(vl)
+        self.history.val_gmean.append(vg)
+        print(f"epoch {trainer.current_epoch + 1:3d}: train_loss={tl:.4f}  val_loss={vl:.4f}  val_gmean={vg:.4f}")
+        if vg > self.best_gmean and self.save_best_to is not None:
+            self.best_gmean = vg
+            Path(self.save_best_to).parent.mkdir(parents=True, exist_ok=True)
+            torch.save(lit.model.state_dict(), self.save_best_to)
 
 
 def train(
@@ -157,70 +209,32 @@ def train(
     save_best_to: Path | str | None = None,
     progress: bool = True,
 ) -> TrainHistory:
-    """Adam + ReduceLROnPlateau. Zapisuje best-by-G-mean checkpoint."""
-    if device is None:
-        device = get_device()
-    model.to(device)
-
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode="min", factor=0.5, patience=3,
+    """Adam + ReduceLROnPlateau. Zapisuje best-by-G-mean checkpoint. Backed by Lightning."""
+    device = device or get_device()
+    accelerator = {"mps": "mps", "cuda": "gpu", "cpu": "cpu"}[device.type]
+    cb = _HistoryAndBestCheckpoint(save_best_to=save_best_to)
+    trainer = pl.Trainer(
+        max_epochs=epochs,
+        accelerator=accelerator,
+        devices=1,
+        enable_progress_bar=progress,
+        callbacks=[cb],
+        logger=False,
+        enable_checkpointing=False,
+        enable_model_summary=False,
     )
-
-    history = TrainHistory(train_loss=[], val_loss=[], val_gmean=[])
-    best_gmean = -1.0
-
-    try:
-        from tqdm import tqdm
-    except ImportError:
-        tqdm = lambda it, **kw: it   # noqa: E731
-
-    for epoch in range(1, epochs + 1):
-        model.train()
-        train_losses = []
-        iterator = train_loader
-        if progress:
-            iterator = tqdm(iterator, desc=f"epoch {epoch}/{epochs} [train]", leave=False)
-        for x, y, fov in iterator:
-            x, y, fov = x.to(device), y.to(device), fov.to(device)
-            optimizer.zero_grad()
-            logits = model(x)
-            loss = combined_loss(logits, y, fov)
-            loss.backward()
-            optimizer.step()
-            train_losses.append(loss.item())
-
-        model.eval()
-        val_losses, val_gmeans = [], []
-        with torch.no_grad():
-            iterator = val_loader
-            if progress:
-                iterator = tqdm(iterator, desc=f"epoch {epoch}/{epochs} [val]", leave=False)
-            for x, y, fov in iterator:
-                x, y, fov = x.to(device), y.to(device), fov.to(device)
-                logits = model(x)
-                loss = combined_loss(logits, y, fov)
-                val_losses.append(loss.item())
-                val_gmeans.append(gmean_torch(torch.sigmoid(logits), y, fov))
-
-        tl = float(np.mean(train_losses))
-        vl = float(np.mean(val_losses))
-        vg = float(np.mean(val_gmeans))
-        history.train_loss.append(tl)
-        history.val_loss.append(vl)
-        history.val_gmean.append(vg)
-        scheduler.step(vl)
-        print(f"epoch {epoch:3d}: train_loss={tl:.4f}  val_loss={vl:.4f}  val_gmean={vg:.4f}")
-
-        if vg > best_gmean and save_best_to is not None:
-            best_gmean = vg
-            Path(save_best_to).parent.mkdir(parents=True, exist_ok=True)
-            torch.save(model.state_dict(), save_best_to)
-
-    return history
+    trainer.fit(_LitUNet(model, lr=lr), train_loader, val_loader)
+    return cb.history
 
 
 # ---- Predykcja na pełnym obrazie -------------------------------------------
+_predict_normalize = A.Normalize(
+    mean=RetinaPatchDataset.IMAGENET_MEAN.tolist(),
+    std=RetinaPatchDataset.IMAGENET_STD.tolist(),
+    max_pixel_value=255.0,
+)
+
+
 @torch.no_grad()
 def predict_mask(
     model: nn.Module,
@@ -232,46 +246,23 @@ def predict_mask(
     threshold: float = 0.5,
     batch_size: int = 8,
 ) -> np.ndarray:
-    """Tiling z overlapem, średnia po nakładkach, próg na sigmoidzie."""
-    if device is None:
-        device = get_device()
+    """Tiling z overlapem przez MONAI sliding_window_inference."""
+    device = device or get_device()
     model.to(device)
     model.eval()
-
-    h, w = rgb.shape[:2]
-    x = (rgb.astype(np.float32) / 255.0 - RetinaPatchDataset.IMAGENET_MEAN) / RetinaPatchDataset.IMAGENET_STD
-    x = np.ascontiguousarray(x.transpose(2, 0, 1))
-    x_t = torch.from_numpy(x).to(device)
-
-    step = tile_size - overlap
-    pad_h = (math.ceil((h - overlap) / step) * step + overlap) - h
-    pad_w = (math.ceil((w - overlap) / step) * step + overlap) - w
-    x_padded = F.pad(x_t.unsqueeze(0), (0, pad_w, 0, pad_h), mode="reflect").squeeze(0)
-    ph, pw = x_padded.shape[1:]
-
-    coords = [
-        (ty, tx)
-        for ty in range(0, ph - overlap, step)
-        for tx in range(0, pw - overlap, step)
-    ]
-
-    prob_sum = torch.zeros((ph, pw), dtype=torch.float32, device=device)
-    weight = torch.zeros((ph, pw), dtype=torch.float32, device=device)
-
-    for start in range(0, len(coords), batch_size):
-        chunk = coords[start:start + batch_size]
-        tiles = torch.stack(
-            [x_padded[:, ty:ty+tile_size, tx:tx+tile_size] for ty, tx in chunk],
-            dim=0,
-        )
-        logits = model(tiles)
-        probs = torch.sigmoid(logits).squeeze(1)
-        for (ty, tx), prob in zip(chunk, probs):
-            prob_sum[ty:ty+tile_size, tx:tx+tile_size] += prob
-            weight[ty:ty+tile_size, tx:tx+tile_size] += 1.0
-
-    avg = (prob_sum / weight.clamp(min=1.0)).cpu().numpy()[:h, :w]
-    return (avg > threshold).astype(np.uint8) & (fov > 0).astype(np.uint8)
+    x = _predict_normalize(image=rgb)["image"]  # HWC float32, znormalizowany
+    x_t = torch.from_numpy(np.ascontiguousarray(x.transpose(2, 0, 1))).unsqueeze(0).to(device)
+    logits = sliding_window_inference(
+        inputs=x_t,
+        roi_size=(tile_size, tile_size),
+        sw_batch_size=batch_size,
+        predictor=model,
+        overlap=overlap / tile_size,
+        mode="constant",
+        padding_mode="reflect",
+    )
+    pred = (torch.sigmoid(logits)[0, 0].cpu().numpy() > threshold).astype(np.uint8)
+    return pred & (fov > 0).astype(np.uint8)
 
 
 # ---- Zapis / wczytanie -----------------------------------------------------
@@ -288,12 +279,10 @@ def load_model(
     device: torch.device | None = None,
 ) -> nn.Module:
     """Tworzy U-Net, wczytuje wagi, .to(device) + eval()."""
-    if device is None:
-        device = get_device()
+    device = device or get_device()
     model = UNet(in_channels=in_channels, out_channels=out_channels,
                  encoder=encoder, encoder_weights=None)
-    state = torch.load(path, map_location="cpu")
-    model.load_state_dict(state)
+    model.load_state_dict(torch.load(path, map_location="cpu"))
     model.to(device)
     model.eval()
     return model

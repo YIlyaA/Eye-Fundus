@@ -49,7 +49,7 @@ def _features_from_batches(
     g_min = g_f.min(axis=1)
     g_max = g_f.max(axis=1)
 
-    # Binaryzacja po średniej jasności — niezmiennicza względem oświetlenia.
+    # Binaryzacja po średniej jasności - niezmiennicza względem oświetlenia.
     thr = g_mean[:, None]
     binary = (patches_g.reshape(n, h * w) > thr).reshape(n, h, w)
     hu, central = _compute_hu_moments_batch(binary)
@@ -173,7 +173,7 @@ def sample_points(
         rng = np.random.default_rng()
     half = patch_size // 2
 
-    # Obcięcie FOV o margines pod patch 5×5 — specyfika projektu, biblioteka tego nie zrobi
+    # Obcięcie FOV o margines pod patch 5×5 - specyfika projektu, biblioteka tego nie zrobi
     valid = fov > 0
     valid[:half, :] = False
     valid[-half:, :] = False

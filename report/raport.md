@@ -1,7 +1,7 @@
-# Wykrywanie naczyń dna siatkówki oka — raport
+# Wykrywanie naczyń dna siatkówki oka - raport
 
 **Przedmiot:** Informatyka w Medycynie (IwM)
-**Projekt:** projekt 2 (DnoOka) — segmentacja naczyń krwionośnych dna oka
+**Projekt:** projekt 2 (DnoOka) - segmentacja naczyń krwionośnych dna oka
 
 ---
 
@@ -16,33 +16,33 @@
 
 **Język:** Python 3.10+
 
-**Aplikacja:** Jupyter Notebook — cztery notebooki w katalogu `notebooks/`:
+**Aplikacja:** Jupyter Notebook - cztery notebooki w katalogu `notebooks/`:
 
-1. `01_baseline.ipynb` — przetwarzanie obrazu (Frangi + morfologia), ocena 3.
-2. `02_classical_ml.ipynb` — Random Forest na patchach 5×5, ocena 4.
-3. `03_deep_learning.ipynb` — U-Net na PyTorch, ocena 5.
-4. `app.ipynb` — interaktywna aplikacja i porównanie trzech metod.
+1. `01_baseline.ipynb` - przetwarzanie obrazu (Frangi + morfologia), ocena 3.
+2. `02_classical_ml.ipynb` - Random Forest na patchach 5×5, ocena 4.
+3. `03_deep_learning.ipynb` - U-Net na PyTorch, ocena 5.
+4. `app.ipynb` - interaktywna aplikacja i porównanie trzech metod.
 
 Wspólny kod wydzielony do modułów `src/*.py`.
 
 **Biblioteki** (pełna lista: `requirements.txt`):
 
-- `numpy`, `scipy` — operacje na tablicach.
-- `scikit-image` — filtr Frangiego, próg Otsu, operacje morfologiczne.
-- `opencv-python` — CLAHE, momenty Hu, gradient Sobela.
-- `Pillow` — wczytywanie obrazów i masek (JPG, TIFF, PNG).
-- `scikit-learn` — `RandomForestClassifier`, `train_test_split`, `confusion_matrix`.
-- `imbalanced-learn` — `RandomUnderSampler`, pipeline z fit_resample.
-- `torch` + `torchvision` — implementacja i trening U-Net.
-- `joblib` — serializacja modelu Random Forest.
-- `matplotlib`, `pandas`, `ipywidgets`, `tqdm` — wizualizacja, tabele, widgety, pasek postępu.
+- `numpy`, `scipy` - operacje na tablicach.
+- `scikit-image` - filtr Frangiego, próg Otsu, operacje morfologiczne.
+- `opencv-python` - CLAHE, momenty Hu, gradient Sobela.
+- `Pillow` - wczytywanie obrazów i masek (JPG, TIFF, PNG).
+- `scikit-learn` - `RandomForestClassifier`, `train_test_split`, `confusion_matrix`.
+- `imbalanced-learn` - `RandomUnderSampler`, pipeline z fit_resample.
+- `torch` + `torchvision` - implementacja i trening U-Net.
+- `joblib` - serializacja modelu Random Forest.
+- `matplotlib`, `pandas`, `ipywidgets`, `tqdm` - wizualizacja, tabele, widgety, pasek postępu.
 
-**Baza obrazów:** HRF Image Database (<https://www5.cs.fau.de/research/data/fundus-images/>) — 45 obrazów (15 zdrowych, 15 z retinopatią cukrzycową, 15 z jaskrą), wraz z eksperckimi maskami naczyń (`manual1/`) i maskami FOV (`mask/`). Ta sama baza używana we wszystkich etapach.
+**Baza obrazów:** HRF Image Database (<https://www5.cs.fau.de/research/data/fundus-images/>) - 45 obrazów (15 zdrowych, 15 z retinopatią cukrzycową, 15 z jaskrą), wraz z eksperckimi maskami naczyń (`manual1/`) i maskami FOV (`mask/`). Ta sama baza używana we wszystkich etapach.
 
 **Podział danych (hold-out, ustalony w `src/config.py`):**
 
 - **Train:** 39 obrazów (po 13 z każdej kategorii).
-- **Test:** 6 obrazów: `14_h, 15_h, 14_dr, 15_dr, 14_g, 15_g` — wspólnych dla wszystkich trzech metod.
+- **Test:** 6 obrazów: `14_h, 15_h, 14_dr, 15_dr, 14_g, 15_g` - wspólnych dla wszystkich trzech metod.
 
 ---
 
@@ -54,20 +54,20 @@ Wspólny kod wydzielony do modułów `src/*.py`.
 
 1. **Wstępne przetwarzanie** (`src/preprocessing.py`)
 
-   - Wyodrębnienie kanału zielonego — naczynia mają na nim największy kontrast.
-   - Wypełnienie pikseli poza FOV medianą wewnątrz FOV — usuwa ostrą krawędź ramki, żeby Frangi nie traktował jej jako naczynia.
-   - CLAHE (`cv2.createCLAHE`, `clipLimit=2.0`, `tileGridSize=(8, 8)`) — lokalne wyrównanie kontrastu z ograniczeniem wzmocnienia szumu.
+   - Wyodrębnienie kanału zielonego - naczynia mają na nim największy kontrast.
+   - Wypełnienie pikseli poza FOV medianą wewnątrz FOV - usuwa ostrą krawędź ramki, żeby Frangi nie traktował jej jako naczynia.
+   - CLAHE (`cv2.createCLAHE`, `clipLimit=2.0`, `tileGridSize=(8, 8)`) - lokalne wyrównanie kontrastu z ograniczeniem wzmocnienia szumu.
 
 2. **Właściwe przetwarzanie** (`src/baseline.py`)
 
-   - Filtr Frangiego (`skimage.filters.frangi`, `sigmas=(1,2,3,4,5)`, `black_ridges=True`) — detektor struktur tubularnych; na kanale zielonym naczynia są ciemniejsze od tła.
-   - Opcjonalny downsampling przed filtrem (`scale=0.5`) — przyspiesza ~4×.
+   - Filtr Frangiego (`skimage.filters.frangi`, `sigmas=(1,2,3,4,5)`, `black_ridges=True`) - detektor struktur tubularnych; na kanale zielonym naczynia są ciemniejsze od tła.
+   - Opcjonalny downsampling przed filtrem (`scale=0.5`) - przyspiesza ~4×.
    - Normalizacja odpowiedzi do [0, 1].
-   - Próg Otsu (`skimage.filters.threshold_otsu`) liczony **tylko po pikselach wewnątrz FOV** — inaczej czarna ramka przesuwa próg w stronę zera.
+   - Próg Otsu (`skimage.filters.threshold_otsu`) liczony **tylko po pikselach wewnątrz FOV** - inaczej czarna ramka przesuwa próg w stronę zera.
 
 3. **Końcowe przetwarzanie**
    - Usunięcie małych komponentów (`skimage.morphology.remove_small_objects`, `min_size=60`).
-   - Zamknięcie morfologiczne dyskiem o promieniu 1 (`skimage.morphology.binary_closing`) — łączy drobne przerwy w naczyniach.
+   - Zamknięcie morfologiczne dyskiem o promieniu 1 (`skimage.morphology.binary_closing`) - łączy drobne przerwy w naczyniach.
    - Końcowe obcięcie maski do FOV.
 
 #### Uzasadnienie
@@ -76,7 +76,7 @@ Filtr Frangiego to klasyczny detektor naczyń o dowolnej orientacji, oparty na a
 
 ### 3.2. Klasyczne uczenie maszynowe (etap 2, ocena 4)
 
-#### Przygotowanie danych — wycinki i ekstrakcja cech
+#### Przygotowanie danych - wycinki i ekstrakcja cech
 
 - Z każdego obrazu uczącego wyznaczamy patche **5×5 px** wokół każdego piksela.
 - Etykieta patcha = wartość maski eksperckiej w **środkowym pikselu**.
@@ -84,17 +84,17 @@ Filtr Frangiego to klasyczny detektor naczyń o dowolnej orientacji, oparty na a
 
 Wektor cech (24 wartości, `src/features._features_from_batches`):
 
-- 6 statystyk RGB — średnia i wariancja w każdym z trzech kanałów.
-- 2 cechy „środkowego piksela" — kanał G surowy i po CLAHE.
-- 4 statystyki patcha na kanale G — mean, var, min, max.
+- 6 statystyk RGB - średnia i wariancja w każdym z trzech kanałów.
+- 2 cechy „środkowego piksela" - kanał G surowy i po CLAHE.
+- 4 statystyki patcha na kanale G - mean, var, min, max.
 - **7 momentów Hu** (`cv2.HuMoments`) z patcha binaryzowanego progiem średniej jasności.
-- 3 momenty centralne — `mu20`, `mu02`, `mu11` (`cv2.moments`).
-- 2 statystyki magnitudy gradientu Sobela — mean i var.
+- 3 momenty centralne - `mu20`, `mu02`, `mu11` (`cv2.moments`).
+- 2 statystyki magnitudy gradientu Sobela - mean i var.
 
 #### Wstępne przetwarzanie zbioru uczącego
 
 - Stratyfikowany podział train / val 2/3 : 1/3 (`sklearn.model_selection.train_test_split`).
-- Balansowanie klas przez **undersampling** (`imblearn.under_sampling.RandomUnderSampler`, `sampling_strategy='auto'`) — wyrównanie do 50/50.
+- Balansowanie klas przez **undersampling** (`imblearn.under_sampling.RandomUnderSampler`, `sampling_strategy='auto'`) - wyrównanie do 50/50.
 
 #### Klasyfikator i parametry
 
@@ -103,7 +103,7 @@ Wektor cech (24 wartości, `src/features._features_from_batches`):
   - `max_depth = None` (bez ograniczenia)
   - `min_samples_leaf = 2`
   - `random_state = 42`
-- Pipeline `imblearn.Pipeline` (`undersample -> rf`) — resampling stosowany **tylko podczas fit**.
+- Pipeline `imblearn.Pipeline` (`undersample -> rf`) - resampling stosowany **tylko podczas fit**.
 
 #### Wyniki hold-out (z notebooka `02_classical_ml.ipynb`)
 
@@ -115,7 +115,7 @@ Wektor cech (24 wartości, `src/features._features_from_batches`):
 
 #### Uzasadnienie
 
-Random Forest został wybrany jako odporny na nieliniowe zależności i nieskorelowany z większością cech jednocześnie (vs. SVM, który wymagałby skalowania). Hand-crafted cechy łączą informację koloru (statystyki RGB/G), kształtu (momenty Hu — niezmiennicze względem skali i obrotu) i krawędzi (Sobel) — dzięki temu model „widzi" patch w kilku komplementarnych reprezentacjach.
+Random Forest został wybrany jako odporny na nieliniowe zależności i nieskorelowany z większością cech jednocześnie (vs. SVM, który wymagałby skalowania). Hand-crafted cechy łączą informację koloru (statystyki RGB/G), kształtu (momenty Hu - niezmiennicze względem skali i obrotu) i krawędzi (Sobel) - dzięki temu model „widzi" patch w kilku komplementarnych reprezentacjach.
 
 ### 3.3. Głębokie uczenie (etap 3, ocena 5)
 
@@ -126,7 +126,7 @@ Random Forest został wybrany jako odporny na nieliniowe zależności i nieskore
 
 #### Przygotowanie danych
 
-- Wewnątrz puli train (39 obrazów) wydzielony inner-val (6 obrazów) — kontrola overfittingu w trakcie uczenia. `TEST_IMAGES` pozostaje nietknięty do końcowej oceny.
+- Wewnątrz puli train (39 obrazów) wydzielony inner-val (6 obrazów) - kontrola overfittingu w trakcie uczenia. `TEST_IMAGES` pozostaje nietknięty do końcowej oceny.
 - Z każdego obrazu losowe kropy **256×256** wewnątrz FOV (`crops_per_train_image = 64`).
 - Sampling środków kropów z biasem na naczynia (`vessel_prob = 0.5`).
 - Augmentacje: obroty o k·90°, odbicie poziome i pionowe.
@@ -153,13 +153,13 @@ Random Forest został wybrany jako odporny na nieliniowe zależności i nieskore
 
 #### Uzasadnienie
 
-U-Net jest standardem w segmentacji medycznej — skip-connections pozwalają łączyć kontekst globalny (głębokie warstwy) z precyzją pikselową (płytkie warstwy), co jest kluczowe dla cienkich struktur jak naczynia. Połączony loss BCE+Dice radzi sobie z dysbalansem klas (Dice) i jednocześnie wymusza ostrość pikselową (BCE).
+U-Net jest standardem w segmentacji medycznej - skip-connections pozwalają łączyć kontekst globalny (głębokie warstwy) z precyzją pikselową (płytkie warstwy), co jest kluczowe dla cienkich struktur jak naczynia. Połączony loss BCE+Dice radzi sobie z dysbalansem klas (Dice) i jednocześnie wymusza ostrość pikselową (BCE).
 
 ---
 
 ## 4. Wizualizacja wyników działania programu
 
-Wizualizacje (oryginał, maska ekspercka, predykcja, overlay) dla wszystkich 6 obrazów testowych — zrzuty ekranu z notebooków `01_baseline.ipynb` (sekcja 3.2), `02_classical_ml.ipynb` (sekcja 6.3), `03_deep_learning.ipynb` (sekcja 5.2). W `app.ipynb` można je obejrzeć łącznie dla wszystkich trzech metod jednocześnie.
+Wizualizacje (oryginał, maska ekspercka, predykcja, overlay) dla wszystkich 6 obrazów testowych - zrzuty ekranu z notebooków `01_baseline.ipynb` (sekcja 3.2), `02_classical_ml.ipynb` (sekcja 6.3), `03_deep_learning.ipynb` (sekcja 5.2). W `app.ipynb` można je obejrzeć łącznie dla wszystkich trzech metod jednocześnie.
 
 ### 4.1. Obraz `14_h` (zdrowy)
 
@@ -185,7 +185,7 @@ Wizualizacje (oryginał, maska ekspercka, predykcja, overlay) dla wszystkich 6 o
 
 > _Wstawić obraz / zrzut._
 
-Wszystkie 6 obrazów testowych nie były używane do uczenia w etapie 2 ani w etapie 3 — wymóg DnoOka.md (obrazy testowe ≠ obrazy uczące) jest spełniony.
+Wszystkie 6 obrazów testowych nie były używane do uczenia w etapie 2 ani w etapie 3 - wymóg DnoOka.md (obrazy testowe ≠ obrazy uczące) jest spełniony.
 
 ---
 
@@ -244,11 +244,11 @@ Wszystkie 6 obrazów testowych nie były używane do uczenia w etapie 2 ani w et
 >
 > - _Czy U-Net wygrał we wszystkich metrykach?_
 > - _Gdzie Random Forest jest porównywalny z U-Netem?_
-> - _Na ile baseline odbiega od metod uczących się — i czy na obrazach z patologiami różnica rośnie?_
+> - _Na ile baseline odbiega od metod uczących się - i czy na obrazach z patologiami różnica rośnie?_
 > - _Jak wygląda kompromis sensitivity vs specificity między metodami?_
 
 ---
 
 ## 6. Wnioski
 
-> _2–3 zdania podsumowujące — która metoda okazała się najlepsza ogólnie, jaki jest jej koszt obliczeniowy względem baseline, jakie są jej ograniczenia._
+> _2–3 zdania podsumowujące - która metoda okazała się najlepsza ogólnie, jaki jest jej koszt obliczeniowy względem baseline, jakie są jej ograniczenia._

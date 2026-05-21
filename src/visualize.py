@@ -62,5 +62,5 @@ def metrics_to_markdown(
     rows: dict[str, dict[str, float]],
     columns: Sequence[str] = ("accuracy", "sensitivity", "specificity", "g_mean", "arith_mean"),
 ) -> str:
-    """Tabela markdown z metryk — do wstawienia w raport."""
+    """Tabela markdown z metryk - do wstawienia w raport."""
     return pd.DataFrame(rows).T.reindex(columns=list(columns)).round(4).to_markdown()

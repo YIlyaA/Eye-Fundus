@@ -1,14 +1,14 @@
-# DnoOka — segmentacja naczyń dna oka
+# DnoOka - segmentacja naczyń dna oka
 
 Binarna segmentacja naczyń krwionośnych na obrazach dna siatkówki oka.
 
-Realizacja etapowa — trzy poziomy trudności odpowiadające ocenom 3, 4 i 5:
+Realizacja etapowa - trzy poziomy trudności odpowiadające ocenom 3, 4 i 5:
 
-1. **Etap 1** — klasyczne przetwarzanie obrazu: kanał zielony -> CLAHE -> filtr Frangiego -> morfologia.
-2. **Etap 2** — klasyczny ML: patche 5×5 + cechy (momenty Hu, statystyki) + Random Forest.
-3. **Etap 3** — deep learning: U-Net na PyTorch.
-4. **Etap 4** — interaktywna aplikacja (`app.ipynb`) + porównanie trzech metod.
-5. **Etap 5** — finalny raport (`report/raport.md`).
+1. **Etap 1** - klasyczne przetwarzanie obrazu: kanał zielony -> CLAHE -> filtr Frangiego -> morfologia.
+2. **Etap 2** - klasyczny ML: patche 5×5 + cechy (momenty Hu, statystyki) + Random Forest.
+3. **Etap 3** - deep learning: U-Net na PyTorch.
+4. **Etap 4** - interaktywna aplikacja (`app.ipynb`) + porównanie trzech metod.
+5. **Etap 5** - finalny raport (`report/raport.md`).
 
 ## Instalacja
 
@@ -43,10 +43,10 @@ Wszystkie notebooki uruchamiane są z korzenia repozytorium, żeby względne śc
 
 Następnie po kolei:
 
-1. `notebooks/01_baseline.ipynb` — etap 1
-2. `notebooks/02_classical_ml.ipynb` — etap 2 (zapisuje `models/rf.joblib`)
-3. `notebooks/03_deep_learning.ipynb` — etap 3 (zapisuje `models/unet.pt`)
-4. `notebooks/app.ipynb` — finalna aplikacja i porównanie
+1. `notebooks/01_baseline.ipynb` - etap 1
+2. `notebooks/02_classical_ml.ipynb` - etap 2 (zapisuje `models/rf.joblib`)
+3. `notebooks/03_deep_learning.ipynb` - etap 3 (zapisuje `models/unet.pt`)
+4. `notebooks/app.ipynb` - finalna aplikacja i porównanie
 
 ## Struktura
 

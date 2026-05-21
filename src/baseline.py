@@ -14,7 +14,7 @@ from .preprocessing import preprocess
 
 @dataclass
 class BaselineResult:
-    """Wszystkie kroki pipeline'u — do wizualizacji w notebooku."""
+    """Wszystkie kroki pipeline'u - do wizualizacji w notebooku."""
 
     preprocessed: np.ndarray
     frangi_response: np.ndarray
@@ -72,7 +72,7 @@ def clean_mask(
 ) -> np.ndarray:
     """Usunięcie małych komponentów, potem zamknięcie. Kolejność istotna."""
     m = binary.astype(bool)
-    # max_size=min_size-1 — równoważne staremu min_size (usuwa komponenty < min_size)
+    # max_size=min_size-1 - równoważne staremu min_size (usuwa komponenty < min_size)
     m = remove_small_objects(m, max_size=min_size - 1)
     if closing_radius > 0:
         m = closing(
@@ -105,5 +105,5 @@ def predict(
 
 
 def predict_mask(rgb: np.ndarray, fov: np.ndarray, **kwargs) -> np.ndarray:
-    """Sama maska — wspólna sygnatura dla wszystkich metod w app.ipynb."""
+    """Sama maska - wspólna sygnatura dla wszystkich metod w app.ipynb."""
     return predict(rgb, fov, **kwargs).mask
