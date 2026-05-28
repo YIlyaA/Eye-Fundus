@@ -1,4 +1,3 @@
-"""U-Net (segmentation_models_pytorch) - etap 3, ocena 5."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -19,23 +18,6 @@ from torchmetrics.classification import BinaryRecall, BinarySpecificity
 from monai.inferers import sliding_window_inference
 
 
-# ---- Model -----------------------------------------------------------------
-def UNet(
-    in_channels: int = 3,
-    out_channels: int = 1,
-    encoder: str = "resnet34",
-    encoder_weights: str | None = "imagenet",
-) -> nn.Module:
-    """U-Net z biblioteki segmentation_models_pytorch (encoder pretrained na ImageNet)."""
-    return smp.Unet(
-        encoder_name=encoder,
-        encoder_weights=encoder_weights,
-        in_channels=in_channels,
-        classes=out_channels,
-    )
-
-
-# ---- Dataset ---------------------------------------------------------------
 class RetinaPatchDataset(Dataset):
     """Losowe kropy 256×256 z augmentacją (rot90, flip), sampling z biasem na naczynia."""
     # Stałe ImageNet - wymagane przez encoder pretrained na ImageNet.
@@ -102,17 +84,15 @@ class RetinaPatchDataset(Dataset):
         return out['image'], out['mask'].float().unsqueeze(0), out['fov'].float().unsqueeze(0)
 
 
-# ---- Loss ------------------------------------------------------------------
 _smp_dice = smp.losses.DiceLoss(mode="binary", from_logits=True)
 
 
 def combined_loss(logits: torch.Tensor, target: torch.Tensor, fov: torch.Tensor) -> torch.Tensor:
     """BCE + Dice (z smp), oba maskowane przez FOV."""
-    # weight=fov daje per-pixel maskowanie BCE bez ręcznej redukcji.
     bce = F.binary_cross_entropy_with_logits(
-        logits, target, weight=fov, reduction="sum"
+        logits, target, weight=fov, reduction="sum" # kara per-piksel
     ) / fov.sum().clamp(min=1.0)
-    dice = _smp_dice(logits * fov, (target * fov).long())
+    dice = _smp_dice(logits * fov, (target * fov).long()) # kara za pokrycie masek
     return bce + dice
 
 
@@ -136,7 +116,6 @@ def get_device() -> torch.device:
     return torch.device("cpu")
 
 
-# ---- Trening (PyTorch Lightning) -------------------------------------------
 @dataclass
 class TrainHistory:
     train_loss: list[float]
@@ -145,7 +124,6 @@ class TrainHistory:
 
 
 class _LitUNet(pl.LightningModule):
-    """Cienka obwoluta Lightning: cała logika treningu/walidacji w step-ach."""
     def __init__(self, model: nn.Module, lr: float = 1e-3):
         super().__init__()
         self.model = model
@@ -184,7 +162,7 @@ class _HistoryAndBestCheckpoint(Callback):
 
     def on_validation_epoch_end(self, trainer, lit: _LitUNet):
         m = trainer.callback_metrics
-        if "train_loss" not in m:  # sanity-check val przed pierwszą epoką treningu
+        if "train_loss" not in m:
             return
         tl = float(m["train_loss"])
         vl = float(m["val_loss"])
@@ -227,7 +205,7 @@ def train(
     return cb.history
 
 
-# ---- Predykcja na pełnym obrazie -------------------------------------------
+
 _predict_normalize = A.Normalize(
     mean=RetinaPatchDataset.IMAGENET_MEAN.tolist(),
     std=RetinaPatchDataset.IMAGENET_STD.tolist(),
@@ -265,7 +243,6 @@ def predict_mask(
     return pred & (fov > 0).astype(np.uint8)
 
 
-# ---- Zapis / wczytanie -----------------------------------------------------
 def save_model(model: nn.Module, path: Path | str) -> None:
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     torch.save(model.state_dict(), path)
@@ -280,8 +257,7 @@ def load_model(
 ) -> nn.Module:
     """Tworzy U-Net, wczytuje wagi, .to(device) + eval()."""
     device = device or get_device()
-    model = UNet(in_channels=in_channels, out_channels=out_channels,
-                 encoder=encoder, encoder_weights=None)
+    model = smp.Unet(encoder_name=encoder, encoder_weights="imagenet", in_channels=in_channels, classes=out_channels)
     model.load_state_dict(torch.load(path, map_location="cpu"))
     model.to(device)
     model.eval()

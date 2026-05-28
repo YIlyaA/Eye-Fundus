@@ -41,7 +41,10 @@ def compute_metrics(
     gt: np.ndarray,
     fov: np.ndarray,
 ) -> dict[str, float]:
-    """accuracy, sensitivity, specificity, precision, g_mean, balanced_accuracy + tp/fp/tn/fn."""
+    # TP - naczynie poprawnie wykryte
+    # FP - tło błędnie wykryte jako naczynie,
+    # TN - tło poprawnie wykryte,
+    # FN - naczynie błędnie wykryte jako tło.
     tn, fp, fn, tp = _counts_in_fov(pred, gt, fov)
     total = tp + tn + fp + fn
 
@@ -59,7 +62,7 @@ def compute_metrics(
         "precision":         float(precision),
         "g_mean":            float(g_mean),
         "balanced_accuracy": float(balanced),
-        "arith_mean":        float(balanced),  # alias z DnoOka.md
+        "arith_mean":        float(balanced),
         "tp": float(tp), "fp": float(fp), "tn": float(tn), "fn": float(fn),
     }
 
